@@ -49,6 +49,32 @@ def test_full_scan_and_diff_flow(client):
     assert set(diff["summary"].keys()) >= {"screenshot", "dom", "har", "result", "signals"}
 
 
+def test_optional_artifact_failure_does_not_fail_scan(client, monkeypatch):
+    # A failing optional artifact (e.g. Cloudflare DOM 400) must not fail an
+    # otherwise-good scan; the scan completes with whatever artifacts succeeded.
+    from app.services.cloudflare import FakeCloudflareClient
+
+    async def boom(self, scan_id):
+        raise RuntimeError("dom 400")
+
+    monkeypatch.setattr(FakeCloudflareClient, "get_dom", boom)
+
+    domain_id = _ingest(client, "partial.test")
+    assert client.post(f"/api/domains/{domain_id}/scan").status_code == 202
+    summary = client.post("/api/cron/tick").json()
+    assert summary["failed"] == 0, summary
+
+    completed = [
+        s for s in client.get(f"/api/domains/{domain_id}").json()["scans"]
+        if s["status"] == "COMPLETED"
+    ]
+    assert len(completed) == 1
+    scan = completed[0]
+    assert scan["has_screenshot"] is True
+    assert scan["has_har"] is True
+    assert scan["has_dom"] is False  # the failed artifact was skipped, not fatal
+
+
 def test_on_demand_diff_is_idempotent(client):
     domain_id = _ingest(client, "idem.test")
     _scan_once(client, domain_id)

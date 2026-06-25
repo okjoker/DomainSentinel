@@ -6,6 +6,7 @@ import respx
 
 from app.services.cloudflare import (
     CloudflareClient,
+    CloudflareError,
     CloudflareRateLimited,
     ScanNotReady,
 )
@@ -40,6 +41,37 @@ async def test_create_scan_rate_limited():
     respx.post(f"{BASE}/scan").mock(return_value=httpx.Response(429))
     client = _client()
     with pytest.raises(CloudflareRateLimited):
+        await client.create_scan("https://example.com", ["desktop"])
+    await client.aclose()
+
+
+@respx.mock
+async def test_create_scan_adopts_recent_scan_on_409():
+    # Cloudflare dedups recent submissions ("website was recently scanned") and
+    # returns the existing scan's uuid; we adopt it instead of failing.
+    respx.post(f"{BASE}/scan").mock(
+        return_value=httpx.Response(
+            409,
+            json={
+                "message": "Submission unsuccessful: website was recently scanned",
+                "status": 409,
+                "result": {"tasks": [{"uuid": "existing-uuid"}]},
+            },
+        )
+    )
+    client = _client()
+    scan_id = await client.create_scan("https://example.com", ["desktop"])
+    assert scan_id == "existing-uuid"
+    await client.aclose()
+
+
+@respx.mock
+async def test_create_scan_409_without_uuid_errors():
+    respx.post(f"{BASE}/scan").mock(
+        return_value=httpx.Response(409, json={"message": "recently scanned", "status": 409})
+    )
+    client = _client()
+    with pytest.raises(CloudflareError):
         await client.create_scan("https://example.com", ["desktop"])
     await client.aclose()
 

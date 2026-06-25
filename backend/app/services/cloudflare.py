@@ -49,8 +49,16 @@ def _extract_uuid(data: dict) -> str:
         if isinstance(data.get("uuid"), str):
             return data["uuid"]
         result = data.get("result")
-        if isinstance(result, dict) and isinstance(result.get("uuid"), str):
-            return result["uuid"]
+        if isinstance(result, dict):
+            if isinstance(result.get("uuid"), str):
+                return result["uuid"]
+            # Cloudflare's 409 "recently scanned" body returns the existing scan
+            # under result.tasks[].uuid — adopt it instead of failing.
+            tasks = result.get("tasks")
+            if isinstance(tasks, list):
+                for task in tasks:
+                    if isinstance(task, dict) and isinstance(task.get("uuid"), str):
+                        return task["uuid"]
     raise CloudflareError(f"could not find scan uuid in create response: {data!r}")
 
 
@@ -78,6 +86,16 @@ class CloudflareClient:
         resp = await self._client.post("/scan", json=payload)
         if resp.status_code == 429:
             raise CloudflareRateLimited()
+        if resp.status_code == 409:
+            # "Submission unsuccessful: website was recently scanned." Cloudflare
+            # dedups recent submissions and returns the existing scan's uuid in the
+            # body; adopt it so we surface the most recent result instead of failing.
+            try:
+                return _extract_uuid(resp.json())
+            except Exception:  # noqa: BLE001 — fall through to a clear error
+                raise CloudflareError(
+                    f"create_scan dedup (409) without a reusable uuid: {resp.text[:300]}"
+                )
         if resp.status_code >= 400:
             raise CloudflareError(f"create_scan failed ({resp.status_code}): {resp.text[:300]}")
         return _extract_uuid(resp.json())

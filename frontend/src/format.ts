@@ -1,5 +1,9 @@
 // Small presentation helpers shared across pages.
 
+// Timestamps within this many seconds of "now" in the future are treated as
+// clock skew and shown as "just now" rather than "in the future".
+const CLOCK_SKEW_TOLERANCE_S = 120;
+
 export function timeAgo(value: string | null): string {
   if (!value) return "never";
   // Backend timestamps are naive UTC; treat them as UTC.
@@ -7,7 +11,11 @@ export function timeAgo(value: string | null): string {
   const then = new Date(iso).getTime();
   const seconds = Math.round((Date.now() - then) / 1000);
   if (Number.isNaN(seconds)) return value;
-  if (seconds < 0) return "in the future";
+  // Tolerate small client/server clock skew (common with VMs/WSL) so a
+  // just-created item doesn't render as "in the future". Only flag timestamps
+  // that are clearly ahead — that signals a genuinely wrong clock.
+  if (seconds < -CLOCK_SKEW_TOLERANCE_S) return "in the future";
+  if (seconds < 0) return "just now";
   const units: [number, string][] = [
     [60, "s"],
     [60, "m"],

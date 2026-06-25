@@ -103,6 +103,14 @@ async def finalize_scan(session, scan: Scan, domain: Domain) -> bool:
     scan.status = ScanStatus.FETCHING
     await session.flush()
 
+    # Artifacts (screenshot/DOM/HAR) are best-effort. Cloudflare can legitimately
+    # return an error for an individual artifact — e.g. DOM 400 when none was
+    # captured for a page — and a single missing artifact must not fail an
+    # otherwise-good scan. We fetch each independently and complete the scan as
+    # long as the result JSON (already in hand) is present; soft failures are
+    # logged for visibility but do not flip the scan to FAILED.
+    soft_errors: list[str] = []
+
     try:
         resolution = settings.screenshot_resolution_list[0]
         png = await cf.get_screenshot(scan.cf_scan_id, resolution)
@@ -110,21 +118,33 @@ async def finalize_scan(session, scan: Scan, domain: Domain) -> bool:
             key = _blob_key(domain.id, scan.id, "screenshot.png")
             await blob.put(key, png, "image/png")
             scan.screenshot_key = key
+    except Exception as exc:  # noqa: BLE001
+        soft_errors.append(f"screenshot: {exc}")
+
+    try:
         dom = await cf.get_dom(scan.cf_scan_id)
         if dom is not None:
             key = _blob_key(domain.id, scan.id, "dom.html")
             await blob.put(key, dom.encode("utf-8"), "text/html")
             scan.dom_key = key
+    except Exception as exc:  # noqa: BLE001
+        soft_errors.append(f"dom: {exc}")
+
+    try:
         har = await cf.get_har(scan.cf_scan_id)
         if har is not None:
             key = _blob_key(domain.id, scan.id, "har.json")
             await blob.put(key, json.dumps(har).encode("utf-8"), "application/json")
             scan.har_key = key
     except Exception as exc:  # noqa: BLE001
-        scan.status = ScanStatus.FAILED
-        scan.error = f"artifact download failed: {exc}"
-        await session.flush()
-        return True
+        soft_errors.append(f"har: {exc}")
+
+    if soft_errors:
+        logger.warning(
+            "scan %s completed with partial artifacts: %s",
+            scan.id,
+            "; ".join(soft_errors),
+        )
 
     highlights = parse_highlights(result)
     scan.result = result
