@@ -1,0 +1,15 @@
+[project]
+name = "domainsentinel"
+version = "0.1.0"
+description = "Domain change monitoring via the Cloudflare URL Scanner"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

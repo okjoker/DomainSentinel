@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+backend/.venv/
+.venv/
+backend/.pytest_cache/
+.pytest_cache/
+
+# Data / artifacts (local-first storage)
+data/
+*.db
+*.sqlite3
+
+# Node / frontend build
+node_modules/
+frontend/dist/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/

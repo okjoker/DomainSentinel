@@ -1,0 +1,5 @@
+# Extra dependencies for the GCP backends (Cloud SQL Postgres + GCS).
+# Install with: pip install -r requirements-gcp.txt
+# Only needed when DATABASE_URL points at Postgres or BLOB_BACKEND=gcs.
+asyncpg==0.30.0
+google-cloud-storage==2.19.0

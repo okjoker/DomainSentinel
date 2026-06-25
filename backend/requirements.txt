@@ -1,0 +1,10 @@
+# DomainSentinel backend — runtime dependencies (local-first profile)
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic-settings==2.7.1
+SQLAlchemy==2.0.36
+aiosqlite==0.20.0
+httpx==0.28.1
+APScheduler==3.11.0
+Pillow==11.1.0
+beautifulsoup4==4.12.3

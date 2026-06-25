@@ -1,0 +1,29 @@
+# Local one-container run. Out of the box this starts in demo mode (synthetic
+# scans, SQLite, local blob storage). Drop real Cloudflare credentials into a
+# .env file to scan live URLs. Uncomment the `db` service + DATABASE_URL to try
+# the Postgres backend locally.
+services:
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+
+  # db:
+  #   image: postgres:16
+  #   environment:
+  #     POSTGRES_USER: domainsentinel
+  #     POSTGRES_PASSWORD: domainsentinel
+  #     POSTGRES_DB: domainsentinel
+  #   ports:
+  #     - "5432:5432"
+  #   volumes:
+  #     - pgdata:/var/lib/postgresql/data
+
+# volumes:
+#   pgdata:
