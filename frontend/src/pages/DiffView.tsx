@@ -3,14 +3,15 @@ import { useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 
 import { api } from "../api";
-import { DomPanel, HarPanel, ScreenshotPanel, VerdictPanel } from "../components/diffPanels";
+import { DnsPanel, DomPanel, HarPanel, ScreenshotPanel, VerdictPanel } from "../components/diffPanels";
 import { ErrorState, SeverityBadge, SignalChip, Spinner } from "../ui";
 
-type Tab = "screenshot" | "dom" | "har" | "verdict";
+type Tab = "screenshot" | "dom" | "har" | "dns" | "verdict";
 const TABS: { key: Tab; label: string }[] = [
   { key: "screenshot", label: "Screenshot" },
   { key: "dom", label: "DOM" },
   { key: "har", label: "Network (HAR)" },
+  { key: "dns", label: "DNS" },
   { key: "verdict", label: "Verdict & tech" },
 ];
 
@@ -84,6 +85,7 @@ export default function DiffView() {
         )}
         {tab === "dom" && <DomPanel diff={s.dom} />}
         {tab === "har" && <HarPanel diff={s.har} />}
+        {tab === "dns" && <DnsPanel diff={s.dns} />}
         {tab === "verdict" && <VerdictPanel diff={s.result} />}
       </div>
     </div>

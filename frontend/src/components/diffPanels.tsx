@@ -1,4 +1,11 @@
-import { api, type DomDiff, type HarDiff, type ResultDiff, type ScreenshotDiff } from "../api";
+import {
+  api,
+  type DnsDiff,
+  type DomDiff,
+  type HarDiff,
+  type ResultDiff,
+  type ScreenshotDiff,
+} from "../api";
 import { Badge } from "../ui";
 
 function Stat({ label, value }: { label: string; value: React.ReactNode }) {
@@ -161,6 +168,63 @@ export function HarPanel({ diff }: { diff: HarDiff }) {
         </div>
       )}
       {!diff.changed && <p className="text-sm text-slate-400">No network changes detected.</p>}
+    </div>
+  );
+}
+
+export const DNS_TYPE_LABELS: Record<string, string> = {
+  ns: "Nameservers (NS)",
+  mx: "Mail servers (MX)",
+  txt: "TXT records",
+  spf: "SPF",
+  dmarc: "DMARC",
+};
+
+export function DnsPanel({ diff }: { diff: DnsDiff }) {
+  if (!diff?.available) return <Unavailable />;
+  const types = Object.keys(DNS_TYPE_LABELS);
+  const critical = (diff.changed_types ?? []).some((t) => t === "ns" || t === "mx");
+  return (
+    <div className="space-y-4">
+      {diff.zone && (
+        <p className="text-xs text-slate-500">
+          Records for zone <span className="font-mono text-slate-300">{diff.zone}</span>
+        </p>
+      )}
+      {critical && (
+        <p className="text-xs text-red-300">
+          ⚠ Nameserver or MX changes can indicate a domain hijack or mail interception — verify
+          this change was intentional.
+        </p>
+      )}
+      {!diff.changed && <p className="text-sm text-slate-400">No DNS record changes detected.</p>}
+      {types.map((rtype) => {
+        const rec = diff.records?.[rtype];
+        const current = diff.new?.[rtype];
+        return (
+          <div key={rtype}>
+            <h4 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              {DNS_TYPE_LABELS[rtype]}
+            </h4>
+            {rec && !rec.available ? (
+              <p className="text-xs text-slate-500">Lookup failed for one of the scans.</p>
+            ) : rec && (rec.added.length || rec.removed.length) ? (
+              <div className="space-y-1">
+                {rec.removed.length > 0 && <List items={rec.removed} tone="remove" />}
+                {rec.added.length > 0 && <List items={rec.added} tone="add" />}
+              </div>
+            ) : (
+              <ul className="space-y-1 font-mono text-xs text-slate-400">
+                {(current ?? []).length ? (
+                  (current ?? []).map((v, i) => <li key={i}>{v}</li>)
+                ) : (
+                  <li className="text-slate-600">none</li>
+                )}
+              </ul>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
