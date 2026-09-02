@@ -7,6 +7,7 @@ from PIL import Image
 from app.services.differ import (
     ScanArtifacts,
     compute_diff,
+    diff_dns,
     diff_dom,
     diff_har,
     diff_result,
@@ -116,6 +117,91 @@ def test_diff_result_verdict_and_tech():
     assert result["changed"]
     assert result["verdict_change"] == {"from": False, "to": True}
     assert result["technologies_added"] == ["Coinhive"]
+
+
+# ------------------------------------------------------------------------- DNS
+
+
+def _dns(**overrides) -> dict:
+    base = {
+        "available": True,
+        "hostname": "www.example.com",
+        "zone": "example.com",
+        "ns": ["ns1.cloudflare.com", "ns2.cloudflare.com"],
+        "mx": ["10 mx1.google.com"],
+        "txt": ["google-site-verification=abc", "v=spf1 include:_spf.google.com -all"],
+        "spf": ["v=spf1 include:_spf.google.com -all"],
+        "dmarc": ["v=DMARC1; p=quarantine; rua=mailto:dmarc@example.com"],
+        "errors": {},
+    }
+    base.update(overrides)
+    return base
+
+
+def test_diff_dns_detects_ns_change():
+    result = diff_dns(_dns(), _dns(ns=["ns1.evil.net", "ns2.evil.net"]))
+    assert result["changed"]
+    assert result["changed_types"] == ["ns"]
+    assert result["records"]["ns"]["added"] == ["ns1.evil.net", "ns2.evil.net"]
+    assert result["records"]["ns"]["removed"] == ["ns1.cloudflare.com", "ns2.cloudflare.com"]
+
+
+def test_diff_dns_identical():
+    result = diff_dns(_dns(), _dns())
+    assert result["available"] and not result["changed"]
+
+
+def test_diff_dns_spf_change_not_double_counted_as_txt():
+    changed = _dns(
+        txt=["google-site-verification=abc", "v=spf1 include:_spf.zoho.com -all"],
+        spf=["v=spf1 include:_spf.zoho.com -all"],
+    )
+    result = diff_dns(_dns(), changed)
+    assert result["changed_types"] == ["spf"]
+
+
+def test_diff_dns_failed_lookup_is_not_a_change():
+    # A record type whose lookup failed (None) must not alert, even though the
+    # other side has values; other types still diff normally.
+    result = diff_dns(_dns(mx=None), _dns(mx=["10 mx.attacker.net"]))
+    assert not result["changed"]
+    assert result["records"]["mx"]["available"] is False
+
+
+def test_diff_dns_unavailable_snapshot():
+    assert diff_dns(None, _dns())["available"] is False
+    assert diff_dns({"available": False}, _dns())["available"] is False
+
+
+def test_compute_diff_dns_signals_and_severity():
+    old = ScanArtifacts(dns=_dns())
+    new = ScanArtifacts(
+        dns=_dns(
+            ns=["ns1.evil.net"],
+            dmarc=["v=DMARC1; p=none"],
+            txt=["google-site-verification=abc", "new-verify=1"],
+        )
+    )
+    outcome = compute_diff(old, new)
+    assert outcome.changed and outcome.severity == "high"  # NS change dominates
+    assert {"nameservers_changed", "dmarc_changed", "txt_records_changed"} <= set(
+        outcome.summary["signals"]
+    )
+    assert outcome.summary["dns"]["changed_types"] == ["ns", "txt", "dmarc"]
+
+
+def test_compute_diff_spf_change_is_medium():
+    outcome = compute_diff(
+        ScanArtifacts(dns=_dns()),
+        ScanArtifacts(
+            dns=_dns(
+                spf=["v=spf1 include:_spf.zoho.com -all"],
+                txt=["google-site-verification=abc", "v=spf1 include:_spf.zoho.com -all"],
+            )
+        ),
+    )
+    assert outcome.severity == "medium"
+    assert outcome.summary["signals"] == ["spf_changed"]
 
 
 # ------------------------------------------------------------------- aggregate

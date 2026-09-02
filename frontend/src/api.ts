@@ -18,6 +18,20 @@ export interface DomainSummary extends DomainBase {
   last_diff_changed: boolean | null;
 }
 
+export interface DnsRecords {
+  available: boolean;
+  hostname?: string;
+  zone?: string;
+  // A record type is null when its lookup failed for that scan.
+  ns?: string[] | null;
+  mx?: string[] | null;
+  txt?: string[] | null;
+  spf?: string[] | null;
+  dmarc?: string[] | null;
+  errors?: Record<string, string>;
+  error?: string;
+}
+
 export interface Scan {
   id: number;
   domain_id: number;
@@ -30,6 +44,7 @@ export interface Scan {
   final_url: string | null;
   page_title: string | null;
   verdict_malicious: boolean | null;
+  dns_records: DnsRecords | null;
   has_screenshot: boolean;
   has_dom: boolean;
   has_har: boolean;
@@ -82,6 +97,22 @@ export interface ResultDiff {
   ips_removed?: string[];
 }
 
+export interface DnsTypeDiff {
+  available: boolean;
+  added: string[];
+  removed: string[];
+}
+
+export interface DnsDiff {
+  available: boolean;
+  changed: boolean;
+  changed_types?: string[];
+  records?: Record<string, DnsTypeDiff>;
+  old?: Record<string, string[] | null>;
+  new?: Record<string, string[] | null>;
+  zone?: string;
+}
+
 export interface DiffSummary {
   changed: boolean;
   severity: string;
@@ -90,6 +121,7 @@ export interface DiffSummary {
   dom: DomDiff;
   har: HarDiff;
   result: ResultDiff;
+  dns: DnsDiff;
 }
 
 export interface Diff {

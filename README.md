@@ -2,8 +2,9 @@
 
 Domain **change monitoring** powered by the [Cloudflare URL Scanner](https://developers.cloudflare.com/radar/investigate/url-scanner/).
 Ingest domains via an API, scan them on a schedule (screenshot + DOM + HAR +
-verdict), and get the **differences between scans highlighted** — visual changes,
-new third-party hosts, DOM edits, and threat-verdict flips.
+verdict + DNS), and get the **differences between scans highlighted** — visual
+changes, new third-party hosts, DOM edits, threat-verdict flips, and DNS record
+changes (NS/MX/TXT/SPF/DMARC).
 
 Built to run as a single container on **GCP Cloud Run**. Runs locally with **zero
 configuration** in a demo mode that uses a synthetic scanner, so you can try the
@@ -17,6 +18,8 @@ whole thing — including diffs — without any Cloudflare credentials.
 - **Scan** each URL with the Cloudflare URL Scanner v2 API, capturing the
   **screenshot**, rendered **DOM**, and **HAR** (full network log), plus the
   scan **verdict** and detected technologies.
+- **Snapshot DNS** with every scan: **NS**, **MX**, and **TXT** records plus the
+  parsed **SPF** and **DMARC** policies for the domain's zone.
 - **Re-scan** on demand and on a schedule (per-domain interval).
 - **Diff** every new scan against the previous one and surface what changed,
   scored by severity (`none → low → medium → high`).
@@ -27,7 +30,7 @@ whole thing — including diffs — without any Cloudflare credentials.
 ```
 React/TS SPA  ──/api──>  FastAPI  ──>  Scanner lifecycle  ──>  Cloudflare URL Scanner v2
    (dashboard,                │              │
-    diff view)                │              ├─ Differ (screenshot / DOM / HAR / verdict)
+    diff view)                │              ├─ Differ (screenshot / DOM / HAR / verdict / DNS)
                               │              │
                        Storage layer         └─ Scheduler (in-process) + POST /api/cron/tick
                        ├─ MetadataStore: SQLAlchemy (SQLite → Postgres)
@@ -128,7 +131,7 @@ Interactive docs at `/docs` (Swagger UI).
 
 ## How diffing works
 
-Each completed scan is compared with the previous completed scan across four
+Each completed scan is compared with the previous completed scan across five
 dimensions; the overall **severity** is the strongest signal found:
 
 - **Screenshot** — pixel difference, similarity %, and a red-tinted overlay of
@@ -139,9 +142,15 @@ dimensions; the overall **severity** is the strongest signal found:
   trackers, exfil endpoints).
 - **Verdict & tech** — malicious-verdict flips, new threat categories,
   added/removed technologies, final-URL/title/IP changes.
+- **DNS** — added/removed **NS**, **MX**, **TXT**, **SPF**, and **DMARC**
+  records between the two snapshots. Lookups run against the zone apex (found by
+  walking up from the URL hostname), and a record type whose lookup failed on
+  either side is skipped rather than raising a false alert.
 
-A malicious verdict or a new threat category is **high**; new external hosts or a
-large visual/DOM change is **medium**; minor changes are **low**.
+A malicious verdict, a new threat category, or an **NS/MX change** (hijack /
+mail-interception indicators) is **high**; new external hosts, a large
+visual/DOM change, or an **SPF/DMARC change** is **medium**; minor changes
+(including other TXT record churn) are **low**.
 
 ## Storage backends (local-first → GCP)
 
@@ -177,7 +186,7 @@ end-to-end via the synthetic scanner.
 ```
 backend/   FastAPI app (app/), tests/, requirements*.txt
   app/api/        routers: domains, scans, diffs, cron
-  app/services/   cloudflare client, synthetic scanner, scanner lifecycle, differ
+  app/services/   cloudflare client, synthetic scanner, scanner lifecycle, differ, dns records
   app/storage/    BlobStore (local + GCS)
   app/{config,db,models,schemas,scheduler,main}.py
 frontend/  React + TS + Vite + Tailwind SPA (built into dist/, served by the API)

@@ -1,9 +1,10 @@
-"""Diff engine: compares two scans of the same domain across four dimensions.
+"""Diff engine: compares two scans of the same domain across five dimensions.
 
   * screenshot  – pixel/visual difference + a red-tinted overlay highlighting changes
   * dom         – normalized HTML line diff (added/removed/unified)
   * har         – network changes: new/removed hosts, requests, status codes
   * result      – verdict, threat categories, technologies, final URL, IPs
+  * dns         – NS/MX/TXT/SPF/DMARC record changes between the two snapshots
 
 Each dimension contributes severity signals; the overall severity is the max
 (none < low < medium < high). All inputs are plain artifacts (dict/str/bytes) so
@@ -31,6 +32,7 @@ class ScanArtifacts:
     dom: str | None = None
     har: dict | None = None
     screenshot: bytes | None = None
+    dns: dict | None = None
 
 
 @dataclass
@@ -207,6 +209,50 @@ def diff_screenshot(old_png: bytes | None, new_png: bytes | None) -> tuple[dict,
     return summary, buf.getvalue()
 
 
+# --------------------------------------------------------------------------- DNS
+
+DNS_RECORD_TYPES = ("ns", "mx", "txt", "spf", "dmarc")
+
+
+def diff_dns(old_dns: dict | None, new_dns: dict | None) -> dict:
+    """Compare two DNS snapshots per record type.
+
+    A record type whose lookup failed on either side (value ``None``) is marked
+    unavailable for that type and never contributes changes — a transient DNS
+    failure must not raise a false alert.
+    """
+    if not (old_dns or {}).get("available") or not (new_dns or {}).get("available"):
+        return {"available": False, "changed": False}
+
+    records: dict[str, dict] = {}
+    changed_types: list[str] = []
+    for rtype in DNS_RECORD_TYPES:
+        old_vals = old_dns.get(rtype)
+        new_vals = new_dns.get(rtype)
+        if old_vals is None or new_vals is None:
+            records[rtype] = {"available": False, "added": [], "removed": []}
+            continue
+        if rtype == "txt":
+            # SPF lives in TXT; report it only under the dedicated spf type.
+            old_vals = [v for v in old_vals if not v.lower().startswith("v=spf1")]
+            new_vals = [v for v in new_vals if not v.lower().startswith("v=spf1")]
+        added = sorted(set(new_vals) - set(old_vals))
+        removed = sorted(set(old_vals) - set(new_vals))
+        records[rtype] = {"available": True, "added": added, "removed": removed}
+        if added or removed:
+            changed_types.append(rtype)
+
+    return {
+        "available": True,
+        "changed": bool(changed_types),
+        "changed_types": changed_types,
+        "records": records,
+        "old": {rtype: old_dns.get(rtype) for rtype in DNS_RECORD_TYPES},
+        "new": {rtype: new_dns.get(rtype) for rtype in DNS_RECORD_TYPES},
+        "zone": new_dns.get("zone") or old_dns.get("zone"),
+    }
+
+
 # ------------------------------------------------------------------------ result
 
 
@@ -262,11 +308,23 @@ def diff_result(old_result: dict | None, new_result: dict | None) -> dict:
 # --------------------------------------------------------------------- aggregate
 
 
+# Severity per changed DNS record type: NS/MX changes are hijack/interception
+# indicators; SPF/DMARC changes weaken (or alter) mail security posture.
+_DNS_SIGNALS = {
+    "ns": (3, "nameservers_changed"),
+    "mx": (3, "mx_changed"),
+    "spf": (2, "spf_changed"),
+    "dmarc": (2, "dmarc_changed"),
+    "txt": (1, "txt_records_changed"),
+}
+
+
 def compute_diff(old: ScanArtifacts, new: ScanArtifacts) -> DiffOutcome:
     dom = diff_dom(old.dom, new.dom)
     har = diff_har(old.har, new.har)
     shot_summary, shot_png = diff_screenshot(old.screenshot, new.screenshot)
     result = diff_result(old.result, new.result)
+    dns = diff_dns(old.dns, new.dns)
 
     signals: list[tuple[int, str]] = []
     if result.get("verdict_change") and result.get("now_malicious"):
@@ -275,6 +333,8 @@ def compute_diff(old: ScanArtifacts, new: ScanArtifacts) -> DiffOutcome:
         signals.append((1, "verdict_changed"))
     if result.get("categories_added"):
         signals.append((3, "new_threat_categories"))
+    for rtype in dns.get("changed_types") or []:
+        signals.append(_DNS_SIGNALS[rtype])
     if har.get("added_hosts"):
         signals.append((2, "new_external_hosts"))
     if har.get("removed_hosts"):
@@ -300,6 +360,7 @@ def compute_diff(old: ScanArtifacts, new: ScanArtifacts) -> DiffOutcome:
         "dom": dom,
         "har": har,
         "result": result,
+        "dns": dns,
     }
     return DiffOutcome(
         changed=rank > 0,

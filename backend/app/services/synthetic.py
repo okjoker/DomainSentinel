@@ -33,6 +33,19 @@ _VOLATILE_HOST_POOL = [
     "tag.partner.co",
 ]
 _TECH_POOL = ["nginx", "React", "Cloudflare", "jQuery", "WordPress", "HSTS", "Webpack"]
+_DNS_PROVIDER_POOL = [
+    "cloudflare.com",
+    "awsdns.net",
+    "googledomains.com",
+    "registrar-servers.com",
+    "digitalocean.com",
+]
+_MAIL_PROVIDER_POOL = [
+    "google.com",
+    "outlook.com",
+    "zoho.com",
+    "fastmail.com",
+]
 
 
 def _seed(value: str) -> int:
@@ -65,6 +78,51 @@ def derive_content(url: str, scan_uuid: str) -> dict:
         "item_count": scan_rng.randint(3, 8),
         "url_seed": _seed(url or host),
         "scan_seed": _seed(scan_uuid),
+    }
+
+
+def make_dns_records(content: dict) -> dict:
+    """Synthetic NS/MX/TXT/SPF/DMARC records for the fake scanner.
+
+    Stable records derive from the URL seed; the scan seed occasionally mutates
+    one dimension (new TXT record, SPF include swap, DMARC policy change, NS
+    provider move) so DNS diffs are demoable without being constant noise.
+    """
+    # XOR the seeds so these streams are independent of the screenshot/HAR ones.
+    url_rng = random.Random(content["url_seed"] ^ 0xD25)
+    scan_rng = random.Random(content["scan_seed"] ^ 0xD25)
+    zone = content["host"].removeprefix("www.")
+
+    dns_provider = url_rng.choice(_DNS_PROVIDER_POOL)
+    mail_provider = url_rng.choice(_MAIL_PROVIDER_POOL)
+    ns = [f"ns1.{dns_provider}", f"ns2.{dns_provider}"]
+    mx = [f"10 mx1.{mail_provider}", f"20 mx2.{mail_provider}"]
+    spf = [f"v=spf1 include:_spf.{mail_provider} -all"]
+    dmarc = [f"v=DMARC1; p=quarantine; rua=mailto:dmarc@{zone}"]
+    txt = [f"google-site-verification={url_rng.getrandbits(64):016x}"]
+
+    roll = scan_rng.random()
+    if roll < 0.15:  # a service verification record appeared
+        txt.append(f"{scan_rng.choice(['ms', 'stripe', 'atlassian'])}-verify={scan_rng.getrandbits(48):012x}")
+    elif roll < 0.25:  # mail was moved to a different provider
+        other = scan_rng.choice([p for p in _MAIL_PROVIDER_POOL if p != mail_provider])
+        spf = [f"v=spf1 include:_spf.{other} -all"]
+    elif roll < 0.33:  # DMARC policy weakened
+        dmarc = [f"v=DMARC1; p=none; rua=mailto:dmarc@{zone}"]
+    elif roll < 0.40:  # nameservers moved to a different provider
+        other = scan_rng.choice([p for p in _DNS_PROVIDER_POOL if p != dns_provider])
+        ns = [f"ns1.{other}", f"ns2.{other}"]
+
+    return {
+        "available": True,
+        "hostname": content["host"],
+        "zone": zone,
+        "ns": sorted(ns),
+        "mx": sorted(mx),
+        "txt": sorted(txt + spf),
+        "spf": sorted(spf),
+        "dmarc": dmarc,
+        "errors": {},
     }
 
 

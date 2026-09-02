@@ -51,6 +51,7 @@ class ScanOut(BaseModel):
     final_url: str | None = None
     page_title: str | None = None
     verdict_malicious: bool | None = None
+    dns_records: dict | None = None
     has_screenshot: bool = False
     has_dom: bool = False
     has_har: bool = False
@@ -117,6 +118,7 @@ def scan_to_out(scan: Scan) -> ScanOut:
         final_url=scan.final_url,
         page_title=scan.page_title,
         verdict_malicious=scan.verdict_malicious,
+        dns_records=scan.dns_records,
         has_screenshot=scan.screenshot_key is not None,
         has_dom=scan.dom_key is not None,
         has_har=scan.har_key is not None,

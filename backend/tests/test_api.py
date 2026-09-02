@@ -38,6 +38,11 @@ def test_full_scan_and_diff_flow(client):
     later = scans[1]
     assert later["has_screenshot"] and later["has_dom"] and later["has_har"]
 
+    # DNS records are captured with every completed scan.
+    dns = later["dns_records"]
+    assert dns["available"] is True
+    assert dns["ns"] and dns["mx"] and dns["spf"] and dns["dmarc"]
+
     # Artifacts are downloadable.
     assert client.get(f"/api/scans/{later['id']}/screenshot").headers["content-type"] == "image/png"
     assert client.get(f"/api/scans/{later['id']}/har").status_code == 200
@@ -46,7 +51,8 @@ def test_full_scan_and_diff_flow(client):
     diff = client.get(f"/api/domains/{domain_id}/diff/latest").json()
     assert diff["from_scan_id"] == scans[0]["id"]
     assert diff["to_scan_id"] == later["id"]
-    assert set(diff["summary"].keys()) >= {"screenshot", "dom", "har", "result", "signals"}
+    assert set(diff["summary"].keys()) >= {"screenshot", "dom", "har", "result", "dns", "signals"}
+    assert diff["summary"]["dns"]["available"] is True
 
 
 def test_optional_artifact_failure_does_not_fail_scan(client, monkeypatch):

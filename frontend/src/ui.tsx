@@ -27,7 +27,11 @@ export function StatusBadge({ status }: { status: string | null }) {
 }
 
 export function SignalChip({ signal }: { signal: string }) {
-  const critical = signal.includes("malicious") || signal.includes("threat");
+  const critical =
+    signal.includes("malicious") ||
+    signal.includes("threat") ||
+    signal === "nameservers_changed" ||
+    signal === "mx_changed";
   const style = critical
     ? "border-red-700 bg-red-900/40 text-red-300"
     : "border-ink-600 bg-ink-800 text-slate-300";

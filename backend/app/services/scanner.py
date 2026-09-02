@@ -22,6 +22,7 @@ from ..config import get_settings
 from ..db import SessionLocal
 from ..models import Diff, Domain, Scan, ScanStatus, utcnow
 from ..storage import get_blob_store
+from . import dns_records
 from .cloudflare import CloudflareRateLimited, ScanNotReady, get_cf_client
 from .differ import ScanArtifacts, compute_diff, parse_highlights
 
@@ -139,6 +140,12 @@ async def finalize_scan(session, scan: Scan, domain: Domain) -> bool:
     except Exception as exc:  # noqa: BLE001
         soft_errors.append(f"har: {exc}")
 
+    # DNS snapshot (NS/MX/TXT/SPF/DMARC); `collect` never raises, but stay defensive.
+    try:
+        scan.dns_records = await dns_records.collect(domain.url, scan.cf_scan_id)
+    except Exception as exc:  # noqa: BLE001
+        soft_errors.append(f"dns: {exc}")
+
     if soft_errors:
         logger.warning(
             "scan %s completed with partial artifacts: %s",
@@ -185,7 +192,9 @@ async def _load_artifacts(blob, scan: Scan) -> ScanArtifacts:
         har = json.loads(await blob.get(scan.har_key))
     if scan.screenshot_key and await blob.exists(scan.screenshot_key):
         screenshot = await blob.get(scan.screenshot_key)
-    return ScanArtifacts(result=scan.result, dom=dom, har=har, screenshot=screenshot)
+    return ScanArtifacts(
+        result=scan.result, dom=dom, har=har, screenshot=screenshot, dns=scan.dns_records
+    )
 
 
 async def compute_and_store_diff(session, from_scan: Scan, to_scan: Scan) -> Diff:

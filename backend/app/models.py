@@ -79,6 +79,9 @@ class Scan(Base):
     page_title: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     verdict_malicious: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
+    # DNS snapshot (NS/MX/TXT/SPF/DMARC) captured when the scan completes.
+    dns_records: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
     # BlobStore keys for the captured artifacts.
     screenshot_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
     dom_key: Mapped[str | None] = mapped_column(String(512), nullable=True)

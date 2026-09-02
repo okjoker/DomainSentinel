@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
-import { api, type Scan } from "../api";
+import { api, type DnsRecords, type Scan } from "../api";
+import { DNS_TYPE_LABELS } from "../components/diffPanels";
 import { isInFlight, timeAgo } from "../format";
 import { Badge, EmptyState, ErrorState, SeverityBadge, SignalChip, Spinner, StatusBadge } from "../ui";
 
@@ -111,6 +112,10 @@ export default function DomainDetail() {
         </section>
       )}
 
+      {completed[0]?.dns_records && (
+        <DnsRecordsCard dns={completed[0].dns_records} capturedAt={completed[0].completed_at} />
+      )}
+
       <section>
         <h2 className="mb-3 text-sm font-semibold text-slate-200">
           Scan history ({data.scans.length})
@@ -131,6 +136,53 @@ export default function DomainDetail() {
         )}
       </section>
     </div>
+  );
+}
+
+function DnsRecordsCard({ dns, capturedAt }: { dns: DnsRecords; capturedAt: string | null }) {
+  return (
+    <section className="card p-4">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold text-slate-200">DNS records</h2>
+        <span className="text-xs text-slate-500">
+          {dns.zone && (
+            <>
+              zone <span className="font-mono text-slate-400">{dns.zone}</span> ·{" "}
+            </>
+          )}
+          captured {timeAgo(capturedAt)}
+        </span>
+      </div>
+      {!dns.available ? (
+        <p className="text-sm text-slate-500">
+          DNS lookup failed for the latest scan{dns.error ? `: ${dns.error}` : "."}
+        </p>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {Object.entries(DNS_TYPE_LABELS).map(([rtype, label]) => {
+            const values = dns[rtype as keyof DnsRecords] as string[] | null | undefined;
+            return (
+              <div key={rtype} className="rounded-lg border border-ink-700 bg-ink-900 px-3 py-2">
+                <div className="text-xs text-slate-500">{label}</div>
+                {values == null ? (
+                  <div className="text-xs text-amber-300">lookup failed</div>
+                ) : values.length === 0 ? (
+                  <div className="text-xs text-slate-600">none</div>
+                ) : (
+                  <ul className="mt-1 space-y-0.5 font-mono text-xs text-slate-300">
+                    {values.map((v, i) => (
+                      <li key={i} className="break-all">
+                        {v}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
   );
 }
 

@@ -64,6 +64,11 @@ export const SIGNAL_LABELS: Record<string, string> = {
   final_url_changed: "Final URL changed",
   dom_changed: "DOM changed",
   visual_changed: "Visual change",
+  nameservers_changed: "Nameservers changed",
+  mx_changed: "MX records changed",
+  spf_changed: "SPF changed",
+  dmarc_changed: "DMARC changed",
+  txt_records_changed: "TXT records changed",
 };
 
 export function isInFlight(status: string | null): boolean {
